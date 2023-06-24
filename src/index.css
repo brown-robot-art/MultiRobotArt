@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.blocklyToolboxDiv {
+  z-index: 10;
+}
+
+svg[display='none'] {
+  display: none;
+}
