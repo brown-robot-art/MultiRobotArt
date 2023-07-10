@@ -322,11 +322,12 @@ export const useRobartState = create<MRAState & MRAActions>()(
             //   eval(block.javaScript);
             // }
             var duration = 0;
-            simulator.dummy();
+            // simulator.dummy();
             
             // This only kind of works, doesn't work for velo commands because init position will be wrong.
             // TODO: Run all blocks up until this point in the timeline to get position
-            eval(get().blocks[blockId].javaScript); // TODO: Totally safe, no security flaws whatsoever.
+            // eval(get().blocks[blockId].javaScript); // TODO: Totally safe, no security flaws whatsoever.
+            duration = 3; // Temp fix...
             const newItem = {
               id: uuid(),
               groupId,
