@@ -19,7 +19,7 @@ export function Crazyflie({ robotId, renderBoundingBox }: CrazyflieProps) {
   const boundingBoxDims = boundingBox?.getSize(new Vector3());
 
   const group = useRef<THREE.Group>(null);
-  const { nodes, materials, animations } = useGLTF('/crazyflie.glb') as any;
+  const { nodes, materials, animations } = useGLTF('./crazyflie.glb') as any;
   const { actions } = useAnimations(animations, group);
 
   useEffect(() => {
