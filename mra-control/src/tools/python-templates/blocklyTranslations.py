@@ -6,11 +6,11 @@ from PIL import ImageColor
 ###
 
 def takeoff(cf, height=1.0, duration=2.0):
-    cf.takeoff(height, duration)
+    cf.takeoff(float(height), float(duration))
     return duration
 
 def land(cf, height=0.04, duration=2.0):
-    cf.land(height, duration)
+    cf.land(float(height), float(duration))
     return duration
 
 ###
@@ -21,11 +21,11 @@ def goto_at_speed(cf, x, y, z, v, rel=False):
     curr_pos = cf.getPosition()
     dist = np.linalg.norm(curr_pos, np.array([x, y, z]))
     duration = dist / v
-    cf.goTo(x, y, z, 0, duration=duration, relative=rel)
+    cf.goTo((float(x), float(y), float(z)), 0, duration=duration, relative=rel)
     return duration
 
 def goto_duration(cf, x, y, z, duration, rel=False):
-    cf.goTo(x, y, z, 0, duration=duration, relative=rel)
+    cf.goTo((float(x), float(y), float(z)), 0, duration=duration, relative=rel)
     return duration
 
 def goto_rel_at_speed(cf, x, y, z, v):
