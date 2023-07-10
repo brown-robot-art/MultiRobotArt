@@ -1,14 +1,17 @@
 import * as THREE from 'three';
+import { Color } from 'three';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
-import { RobotState, TimelineState, useRobartState } from './useRobartState';
 import { SimulatorGroupState } from './simulatorCommands';
 import * as SIM from './simulatorCommands';
+import { RobotState, TimelineState, useRobartState } from './useRobartState';
 
 export const FPS = 60;
 
-type TrajectoryPolynomial = [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3] | null;
+type TrajectoryPolynomial =
+  | [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3]
+  | null;
 
 export interface Trajectory {
   polynomial: TrajectoryPolynomial;
@@ -17,9 +20,11 @@ export interface Trajectory {
 
 export interface RobotSimState {
   id: string;
+  boundingBox?: THREE.Box3;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   acc: THREE.Vector3;
+  color: THREE.Color;
   trajectories: Trajectory[];
   trajectory: TrajectoryPolynomial;
   trajectoryDuration: number;
@@ -54,8 +59,10 @@ export interface SimulatorActions {
    * @returns
    */
   setRobots: (robots: Record<string, RobotState>) => void;
+  updateRobotBoundingBox: (robotId: string, boundingBox: THREE.Box3) => void;
+  checkCollisions: (robotId: string) => boolean;
   updateTrajectory: (robotId: string, trajectory: TrajectoryPolynomial, duration: number) => void;
-  robotGoTo: (robotId: string, position: THREE.Vector3, velocity: THREE.Vector3, acceleration: THREE.Vector3) => TrajectoryPolynomial;
+  robotGoTo: (robotId: string, position: THREE.Vector3, velocity: THREE.Vector3, acceleration: THREE.Vector3) => TrajectoryPolynomial;  
   executeSimulation: (startTime: number) => void;
   cancelSimulation: () => void;
 }
@@ -66,7 +73,7 @@ export const useSimulator = create<SimulatorState & SimulatorActions>()(
     play: () => { 
       set({ status: 'RUNNING', time: 0 });
       get().executeSimulation(0);
-   },
+    },
     pause: () => {
       set({ status: 'PAUSED' });
       get().cancelSimulation();
@@ -84,6 +91,7 @@ export const useSimulator = create<SimulatorState & SimulatorActions>()(
       if (status !== 'RUNNING') return;
       const deltaT = 1 / (FPS * timeDilation);
       const newSimTime = time + deltaT;
+      //TODO update time text in simulation window
       const robots = { ...currentRobots };
 
       Object.keys(robots).forEach((robotId) => {
@@ -96,11 +104,14 @@ export const useSimulator = create<SimulatorState & SimulatorActions>()(
           newPos.addScaledVector(coefficient, Math.pow(trajectoryTime, i));
         });
 
-        console.log('robot', robotId, 'newpos', newPos);
+        const offset = newPos.clone().sub(robot.pos);
+
+        // console.log('robot', robotId, 'newpos', newPos);
 
         robots[robotId] = {
           ...robots[robotId],
           pos: newPos,
+          boundingBox: robot.boundingBox?.clone().translate(offset),
           timeAlongTrajectory: trajectoryTime,
         };
 
@@ -120,16 +131,51 @@ export const useSimulator = create<SimulatorState & SimulatorActions>()(
       Object.values(robots).forEach((robot) => {
         simRobots[robot.id] = {
           id: robot.id,
+          boundingBox: undefined,
           pos: new THREE.Vector3(...robot.startingPosition),
           vel: new THREE.Vector3(),
           acc: new THREE.Vector3(),
+          color: new THREE.Color(255, 255, 255),
           timeAlongTrajectory: 0,
           trajectory: null,
           trajectoryDuration: 0,
-          trajectories: []
+          trajectories: [],
         };
       });
       set({ robots: simRobots });
+    },
+    updateRobotBoundingBox: (robotId, boundingBox) => {
+      set((state) => {
+        state.robots[robotId].boundingBox = boundingBox;
+      });
+    },
+    checkCollisions: (robotId) => {
+      const thisRobot = get().robots[robotId];
+      const robots = Object.entries(get().robots);
+
+      if (thisRobot.boundingBox === undefined) return false;
+
+      return robots.some(([otherRobotId, otherRobot]) => {
+        // there's a collision if
+        // 1. the other robot is not this robot
+        // 2. the other robot has a bounding box
+        // 3. this robot has a bounding box
+        // 4. the bounding boxes intersect
+
+        if (
+          otherRobotId !== robotId &&
+          otherRobot.boundingBox &&
+          thisRobot.boundingBox &&
+          thisRobot.boundingBox.intersectsBox(otherRobot.boundingBox)
+        ) {
+          console.log('collision between', robotId, 'and', otherRobotId);
+          console.log('robotId position', thisRobot.pos, 'and other robot position', otherRobot.pos);
+        }
+
+        return (
+          otherRobotId !== robotId && otherRobot.boundingBox && thisRobot.boundingBox && thisRobot.boundingBox.intersectsBox(otherRobot.boundingBox)
+        );
+      });
     },
     updateTrajectory: (robotId, trajectory, duration) => {
       set((state) => {
@@ -181,36 +227,38 @@ export const useSimulator = create<SimulatorState & SimulatorActions>()(
         .addScaledVector(pos, -10)
         .multiplyScalar(2);
 
-      return [a0, a1, a2, a3, a4, a5, a6, a7] as any; // TODO: For some reason typescript is unhappy here...
+      return [a0, a1, a2, a3, a4, a5, a6, a7];
     },
     executeSimulation: (startTime) => {
       const timeline = useRobartState.getState().timelineState;
       const blocks = useRobartState.getState().blocks;
       console.log('execute', timeline.groups);
-      Object.values(timeline.groups).forEach(group => {
+      Object.values(timeline.groups).forEach((group) => {
         // Need the following local variables so that the EVAL works properly.
         const group_state: SimulatorGroupState = {
-          robotIDs: Object.keys(group.robots)
+          robotIDs: Object.keys(group.robots),
         };
         const simulator = SIM; // This is the simulator object for commands, necessary for the eval to work.
         // END: The need of said local variables
+        
+        var duration = 0; // Duration is modified by each block
         Object.values(group.items).forEach(timelineItem => {
           console.log('item time', timelineItem.startTime);
           const offset = timelineItem.startTime - startTime;
-          if(offset < 0) return;
-          
+          if (offset < 0) return;
+
           const timeout = setTimeout(() => {
-            eval(blocks[timelineItem.blockId].javaScript); // TODO: Totally safe, no security flaws whatsoever.
+            // TODO: Totally safe, no security flaws whatsoever.
+            eval(blocks[timelineItem.blockId].javaScript);
           }, timeline.scale * offset * 1000);
           SIMULATOR_TIMEOUTS.push(timeout);
         });
-      })
+      });
     },
     cancelSimulation: () => {
       // Clear all of the timeouts
-      SIMULATOR_TIMEOUTS.map(timeout => clearInterval(timeout));
-      while(SIMULATOR_TIMEOUTS.length > 0) 
-        SIMULATOR_TIMEOUTS.pop();
-    }
+      SIMULATOR_TIMEOUTS.map((timeout) => clearInterval(timeout));
+      while (SIMULATOR_TIMEOUTS.length > 0) SIMULATOR_TIMEOUTS.pop();
+    },
   })),
 );
